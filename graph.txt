@@ -1,0 +1,57 @@
+class ResearchState(TypedDict):
+    # Input
+    query: str
+
+    # Planner output
+    tasks: list[dict]          # [{"tool": "tavily", "goal": "find recent news"}, ...]
+
+    # Retrieval results (one entry per agent run)
+    retrieval_results: Annotated[list[dict], add_messages]
+    # e.g. [{"source": "arxiv", "content": "...", "score": 0.9}, ...]
+
+    # Synthesizer output
+    synthesis: str
+
+    # Critic output
+    critic_feedback: str       # "PASS" or "ISSUES: ..."
+    critic_loops: int          # caps retries at 2
+
+    # Report Generator output
+    final_report: str
+    report_format: str         # "summary" | "bullets" | "full_paper"
+
+    # For streaming to frontend
+    messages: Annotated[list[AnyMessage], add_messages]
+    agent_status: dict         # {"planner": "done", "retrieval": "running", ...}
+```
+
+---
+
+**The Graph Structure**
+```
+START
+  │
+  ▼
+[planner_node]
+  │  Outputs: tasks list, decides report_format
+  │
+  ▼
+[retrieval_router]          ← fans out tasks to specialist nodes
+  │
+  ├──► [tavily_node]  ──┐
+  ├──► [arxiv_node]   ──┤──► [join / wait for all]
+  └──► [wiki_node]    ──┘
+                         │
+                         ▼
+                  [synthesizer_node]
+                         │
+                         ▼
+                   [critic_node]
+                    /          \
+          "PASS"  /              \ "RETRY" (critic_loops < 2)
+                 /                \
+                ▼                  ▼
+       [report_generator]    [retrieval_router]  ← loops back
+                │
+                ▼
+              END
